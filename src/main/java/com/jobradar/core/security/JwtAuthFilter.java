@@ -1,6 +1,8 @@
 package com.jobradar.core.security;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +26,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String header = req.getHeader(HttpHeaders.AUTHORIZATION);
         if (header != null && header.startsWith("Bearer ")) {
             try {
-                Long userId = Long.valueOf(jwtService.parse(header.substring(7)).getSubject());
-                SecurityContextHolder.getContext().setAuthentication(
-                        new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                Claims claims = jwtService.parse(header.substring(7));
+                // service-to-service tokens carry "svc": principal = service name, role SERVICE
+                var auth = claims.get("svc") != null
+                        ? new UsernamePasswordAuthenticationToken(claims.getSubject(), null,
+                                List.of(new SimpleGrantedAuthority("ROLE_SERVICE")))
+                        : new UsernamePasswordAuthenticationToken(Long.valueOf(claims.getSubject()), null, List.of());
+                SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (JwtException | IllegalArgumentException e) {
                 SecurityContextHolder.clearContext();
             }

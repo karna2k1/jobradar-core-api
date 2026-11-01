@@ -32,7 +32,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
-                        .anyRequest().authenticated())
+                        .requestMatchers("/internal/**").hasRole("SERVICE")
+                        .anyRequest().access((auth, ctx) -> new org.springframework.security.authorization.AuthorizationDecision(
+                                auth.get().getPrincipal() instanceof Long)))
                 .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
