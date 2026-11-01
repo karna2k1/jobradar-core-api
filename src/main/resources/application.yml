@@ -1,0 +1,18 @@
+spring:
+  application.name: jobradar-core-api
+  config.import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/jobradar_core}
+    username: ${DB_USER:jobradar}
+    password: ${DB_PASSWORD:jobradar}
+  jpa:
+    hibernate.ddl-auto: validate
+    open-in-view: false
+  mvc.problemdetails.enabled: true
+server.port: 8080
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-ttl: 15m
+    refresh-ttl: 7d
+  cors.allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:3001,http://localhost:3002}
