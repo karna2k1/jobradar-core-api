@@ -5,3 +5,5 @@ target/
 .env
 *.log
 HELP.md
+.env.*
+!.env.prod.example

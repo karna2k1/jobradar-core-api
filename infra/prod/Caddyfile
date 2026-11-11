@@ -1,0 +1,17 @@
+# DOMAIN_SUFFIX is "<vm-ip-with-dashes>.sslip.io" (free wildcard DNS), e.g. 140-238-1-2.sslip.io,
+# or your own domain later. Caddy fetches and renews HTTPS certificates automatically.
+
+core.{$DOMAIN_SUFFIX} {
+	encode gzip
+	reverse_proxy core-api:8080
+}
+
+ingest.{$DOMAIN_SUFFIX} {
+	encode gzip
+	reverse_proxy job-ingest:8081
+}
+
+match.{$DOMAIN_SUFFIX} {
+	encode gzip
+	reverse_proxy match-notify:8082
+}

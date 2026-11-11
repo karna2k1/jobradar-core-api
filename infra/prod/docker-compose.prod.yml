@@ -1,0 +1,103 @@
+# Production stack for one always-on VM (Oracle Cloud Always Free, Ampere arm64).
+# Everything runs here, Postgres included (nightly dumps in ~/jobradar-backups). Repos are cloned side by side:
+#   ~/jobradar/{jobradar-core-api, job-ingest-service, match-notify-service}
+# Start/update:  ./deploy.sh   (reads ./.env.prod)
+name: jobradar
+
+x-backend: &backend
+  restart: unless-stopped
+  env_file: .env.prod
+  environment: &backend-env
+    KAFKA_BOOTSTRAP: redpanda:9092
+    REDIS_HOST: redis
+    JAVA_OPTS: -Xmx512m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+    DB_USER: jobradar
+  depends_on:
+    postgres: { condition: service_healthy }
+    redpanda: { condition: service_started }
+    redis: { condition: service_started }
+
+services:
+  core-api:
+    <<: *backend
+    build: ../../../jobradar-core-api
+    environment:
+      <<: *backend-env
+      DB_URL: jdbc:postgresql://postgres:5432/jobradar_core
+
+  job-ingest:
+    <<: *backend
+    build: ../../../job-ingest-service
+    environment:
+      <<: *backend-env
+      DB_URL: jdbc:postgresql://postgres:5432/jobradar_ingest
+
+  match-notify:
+    <<: *backend
+    build: ../../../match-notify-service
+    environment:
+      <<: *backend-env
+      DB_URL: jdbc:postgresql://postgres:5432/jobradar_match
+      CORE_API_URL: http://core-api:8080
+      PUBLIC_URL: https://match.${DOMAIN_SUFFIX}
+
+  # One Postgres, three databases (created by ../init on first start). Not published to the internet.
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobradar
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
+      POSTGRES_DB: postgres
+    command: postgres -c shared_buffers=256MB -c max_connections=60
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "jobradar"]
+      interval: 5s
+      retries: 20
+
+  # Nightly gzipped dump of all databases to ~/jobradar-backups on the VM, keeping 14 days.
+  pg-backup:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: jobradar
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ${HOME}/jobradar-backups:/backups
+    entrypoint: ["sh", "-c", "while :; do pg_dumpall | gzip > /backups/jobradar-$$(date +%F).sql.gz; find /backups -name '*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    restart: unless-stopped
+    command: >
+      redpanda start --mode dev-container --smp 1 --memory 1G --overprovisioned
+      --kafka-addr PLAINTEXT://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda:9092
+    volumes: [redpanda:/var/lib/redpanda/data]
+
+  # HTTPS for the three APIs (Let's Encrypt certificates, renewed automatically)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN_SUFFIX: ${DOMAIN_SUFFIX}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [core-api, job-ingest, match-notify]
+
+volumes:
+  pgdata:
+  redpanda:
+  caddy_data:

@@ -1,0 +1,21 @@
+# Hugging Face terminates HTTPS; Caddy routes one public port to the three services by path prefix.
+{
+	admin off
+	auto_https off
+}
+
+:7860 {
+	encode gzip
+	handle_path /core/* {
+		reverse_proxy localhost:8080
+	}
+	handle_path /ingest/* {
+		reverse_proxy localhost:8081
+	}
+	handle_path /match/* {
+		reverse_proxy localhost:8082
+	}
+	handle {
+		respond "JobRadar API: /core /ingest /match" 200
+	}
+}
